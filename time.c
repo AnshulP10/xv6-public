@@ -14,12 +14,15 @@ int main (int argc,char *argv[])
     if (pid!= 0)
     {   
         status=waitx(&x,&y);
+        printf(1, "Wait Time = %d\n Run Time = %d\n Status: %d \n", x, y, status); 
+
     }   
     else
     {   
-      exec(argv[1], argv);
-      printf(1,"%s failed fork\n", argv[1]);
+      //exec(argv[1], argv);
+      //printf(1,"%s failed fork\n", argv[1]);
+      for(volatile int k = 0; k<100000000; k++)
+        k = k + 1 - 2 + 2; 
     }   
-    printf(1, "Wait Time = %d\n Run Time = %d\n Status: %d \n", x, y, status); 
     exit();
 }
