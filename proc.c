@@ -112,7 +112,7 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
-  p->ctime1 = ticks; // TODO Might need to protect the read of ticks with a lock
+  p->ctime = ticks; // TODO Might need to protect the read of ticks with a lock
   p->etime = 0;
   p->rtime = 0;
   p->iotime=0;
@@ -135,7 +135,7 @@ userinit(void)
     panic("userinit: out of memory?");
   inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
   p->sz = PGSIZE;
-  p->ctime1 = ticks;
+  p->ctime = ticks;
   p->priority = 7;
   memset(p->tf, 0, sizeof(*p->tf));
   p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
@@ -337,7 +337,7 @@ waitx(int *wtime, int *rtime)
       havekids = 1;
       if(p->state == ZOMBIE){
         // Found one.
-        *wtime= p->etime - p->ctime1 - p->rtime - p->iotime;
+        *wtime= p->etime - p->ctime - p->rtime - p->iotime;
         *rtime=p->rtime;
         pid = p->pid;
         kfree(p->kstack);
@@ -407,18 +407,16 @@ scheduler(void)
     struct proc *minP = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state == RUNNABLE){
-        if (minP!=0){
-          if(p->ctime1 <= minP->ctime1)
-            minP = p;
-        }
-        else
+        if (minP!=0  && p->ctime < minP->ctime)
+          minP = p;
+        else if(minP == 0)
           minP = p;
       }
     }
     if (minP!=0){
       p = minP;//the process with the smallest creation time
       c->proc = p;
-      cprintf("state = %d ctime = %d pid = %d \t",p->state, p->ctime1, p->pid);
+      cprintf("state = %d ctime = %d pid = %d \t",p->state, p->ctime, p->pid);
       switchuvm(p);
       p->state = RUNNING;
       swtch(&c->scheduler, p->context);
@@ -432,14 +430,11 @@ scheduler(void)
     #else
     #ifdef PBS
     struct proc *p1;
-    // Enable interrupts on this processor.
     struct proc *highP =  0;
-    // Loop over process table looking for process to run.
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
       highP = p;
-      // Choose one with highest priority
       for(p1=ptable.proc; p1<&ptable.proc[NPROC];p1++){
           if(p1->state != RUNNABLE)
             continue;
@@ -454,7 +449,6 @@ scheduler(void)
       swtch(&(c->scheduler), p->context);
       //cprintf("state after ending = %d\n", p->state);
       switchkvm();
-
       // Process is done running for now.
       // It should have changed its p->state before coming back.
       c->proc = 0;
@@ -650,47 +644,34 @@ procdump(void)
 }
 
 int
-cps()
-{
+cps(){
     struct proc *p;
-
-    // Enable interrupts on this processor.
     sti();
-
-    // Loop over process table looking for process with pid.
     acquire(&ptable.lock);
     cprintf("name \t pid \t state \t \t priority \n");
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    {
-        if(p->state == SLEEPING)
-            cprintf("%s \t %d \t SLEEPING \t %d\n", p->name, p->pid, p->priority);
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        if(p->state == RUNNABLE)
+            cprintf("%s \t %d \t RUNNABLE \t %d\n", p->name, p->pid, p->priority);
         else if(p->state == RUNNING)
             cprintf("%s \t %d \t RUNNING \t %d\n", p->name, p->pid, p->priority);
-        else if(p->state == RUNNABLE)
-            cprintf("%s \t %d \t RUNNABLE \t %d\n", p->name, p->pid, p->priority);
+        else if(p->state == SLEEPING)
+            cprintf("%s \t %d \t SLEEPING \t %d\n", p->name, p->pid, p->priority);
     }
-
     release(&ptable.lock);
-
-    return 22;
+    return 24;
 }
 
 // Change priority
 int
-cpr(int pid, int priority)
-{
+cpr(int pid, int priority){
     struct proc *p;
-
     acquire(&ptable.lock);
-    for(p=ptable.proc; p<&ptable.proc[NPROC]; p++)
-    {
-        if(p->pid == pid)
-        {
+    for(p=ptable.proc; p<&ptable.proc[NPROC]; p++){
+        if(p->pid == pid){
             p->priority = priority;
             break;
         }
     }
     release(&ptable.lock);
-
     return pid;
 }
