@@ -111,12 +111,23 @@ trap(struct trapframe *tf)
   #else
   // Force process to give up CPU on clock tick.
   // If interrupts were on while locks held, would need to check nlock.
+/*  #ifdef MLFQ
+  int clicks_per_queue[5]={1, 2, 4, 8, 16};
+  if(myproc() && myproc()->state == RUNNING &&
+     tf->trapno == T_IRQ0+IRQ_TIMER){
+      if(myproc()->clicks==clicks_per_queue[myproc()->priority-1]){
+        myproc()->clicks=0;
+        yield();
+      }
+      else if(myproc()->clicks<clicks_per_queue[myproc()->priority-1])
+          myproc()->clicks++;
+  }
+  #else*/
   if(myproc() && myproc()->state == RUNNING &&
      tf->trapno == T_IRQ0+IRQ_TIMER)
     yield();
-
+//  #endif
   #endif
-
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER){
     exit();

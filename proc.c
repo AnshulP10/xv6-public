@@ -13,6 +13,19 @@ struct {
 } ptable;
 
 static struct proc *initproc;
+#ifdef MLFQ
+struct proc* q1[64];
+struct proc* q2[64];
+struct proc* q3[64];
+struct proc* q4[64];
+struct proc* q5[64];
+int c1=0;
+int c2=0;
+int c3=0;
+int c4=0;
+int c5=0;
+int clicks_per_queue[5]={1, 2, 4, 8, 16};
+#endif
 
 int nextpid = 1;
 extern void forkret(void);
@@ -82,13 +95,28 @@ allocproc(void)
     if(p->state == UNUSED)
       goto found;
 
+  #ifdef MLFQ 
+  p->priority = 1;
+  c1++;
+  q1[c1-1] = p;
+  #endif 
+  #ifdef PBS
+  p->priority = 60;
+  #endif
   release(&ptable.lock);
   return 0;
 
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-
+  #ifdef MLFQ
+  p->priority = 1;
+  c1++;
+  q1[c1-1] = p;
+  #endif
+  #ifdef PBS
+  p->priority = 60;
+  #endif
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -135,8 +163,6 @@ userinit(void)
     panic("userinit: out of memory?");
   inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
   p->sz = PGSIZE;
-  p->ctime = ticks;
-  p->priority = 7;
   memset(p->tf, 0, sizeof(*p->tf));
   p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
   p->tf->ds = (SEG_UDATA << 3) | DPL_USER;
@@ -156,7 +182,6 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
-
   release(&ptable.lock);
 }
 
@@ -364,6 +389,17 @@ waitx(int *wtime, int *rtime)
   }
 }
 
+int getpinfo(struct procstat* curproc){
+  struct proc *p = myproc();
+  curproc->pid = p->pid;
+  curproc->current_queue = p->priority;
+  curproc->num_run = p->num_run;
+  for(int i = 0; i < 5; i++)
+    curproc->ticks[i]=p->cq[i];
+  curproc->runtime = p->rtime;
+  return 25;
+}
+
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
@@ -455,6 +491,241 @@ scheduler(void)
     }
     #else
     #ifdef MLFQ
+padhi:
+    for(int i = 0; i < c2; i++){
+      if(q2[i]->state==RUNNABLE && (ticks - (q2[i]->last_time))>100){
+  //        cprintf("%s-%d getting promoted\n",q2[i]->name, q2[i]->pid);
+          p = q2[i];
+          p->priority=1;
+          q2[i]=0;
+          for(int j = i; j<c2-1; j++)
+              q2[j]=q2[j+1];
+          
+          c2--;
+          c1++;
+          i--;
+          q1[c1-1]=p;
+          p->last_time=ticks;
+      }
+    }
+    for(int i = 0; i < c3; i++){
+      if(q3[i]->state==RUNNABLE && (ticks - (q3[i]->last_time))>100){
+  //        cprintf("%s-%d getting promoted\n",q3[i]->name, q3[i]->pid);
+          p = q3[i];
+          p->priority=2;
+          q3[i]=0;
+          for(int j = i; j<c3-1; j++)
+              q3[j]=q3[j+1];
+          c3--;
+          c2++;
+          i--;
+          q2[c2-1]=p;
+          p->last_time=ticks;
+      }
+    }
+    for(int i = 0; i < c4; i++){
+      if(q4[i]->state==RUNNABLE && (ticks - (q4[i]->last_time))>100){
+ //         cprintf("%s-%d getting promoted\n",q4[i]->name, q4[i]->pid);
+          p = q4[i];
+          p->priority=3;
+          q4[i]=0;
+          for(int j = i; j<c4-1; j++)
+              q4[j]=q4[j+1];
+          c4--;
+          c3++;
+          i--;
+          q3[c3-1]=p;
+          p->last_time=ticks;
+      }
+    }
+    for(int i = 0; i < c5; i++){
+      if(q5[i]->state==RUNNABLE && (ticks - (q5[i]->last_time))>100){
+  //        cprintf("%s-%d getting promoted\n",q5[i]->name, q5[i]->pid);
+          p = q5[i];
+          p->priority=4;
+          q5[i]=0;
+          for(int j = i; j<c5-1; j++)
+              q5[j]=q5[j+1];
+          c5--;
+          c4++;
+          i--;
+          q4[c4-1]=p;
+          p->last_time=ticks;
+      }
+    }
+    if(c1){
+      //cprintf("xd\n");
+      for(int i = 0; i < c1; i++){
+        if(q1[i]->state != RUNNABLE)
+          continue;
+        //if(q1[i]){
+          p = q1[i];
+          //cprintf("from c0. id =%d name =%s\n",p->pid,p->name);
+				  cprintf("executing this at time  = %d. id=%d , name =%s , state =%d, priority=%d\n",ticks,p->pid, p->name,p->state,p->priority);
+				  c->proc=p;
+          switchuvm(p);
+//          cprintf("tatte daba dunga\n");
+          p->state = RUNNING;
+          p->last_time=ticks;
+				  swtch(&c->scheduler, p->context);
+//          cprintf("I will switch your mother\n");
+				  switchkvm();
+//          cprintf("proc exec\n");
+          //if(p->clicks==clicks_per_queue[0]){
+//            cprintf("yeeting %s\n", p->name);
+//            release(&ptable.lock);
+//            yield();
+//            acquire(&ptable.lock);
+          /*  c2++;
+            p->priority++;
+            q2[c2-1]=p;
+            q1[i]=0;
+            for(int j = i; j < c1; j++){
+             q1[j] = q1[j+1];
+            }
+            c1--;*/
+          //}
+          c->proc = 0;
+          goto padhi;
+    //    }
+      }
+    }
+
+    if(c2){
+      for(int i = 0; i < c2; i++){
+        if(q2[i]->state != RUNNABLE)
+          continue;
+       // if(q2[i]){
+          p = q2[i];
+          //cprintf("from c0. id =%d name =%s\n",p->pid,p->name);
+				  cprintf("executing this  . id=%d , name =%s , state =%d, priority=%d\n",p->pid, p->name,p->state, p->priority);
+				  c->proc = p;
+          switchuvm(p);
+				  p->state = RUNNING;
+          p->last_time=ticks;
+//          cprintf("ttttttttttttttttt\n");
+				  swtch(&c->scheduler, p->context);
+//          cprintf("I will switch you\n");
+				  switchkvm();
+//          cprintf("proc exec\n");
+   //       if(p==clicks_per_queue[1]){
+//            release(&ptable.lock);
+//            yield();
+//            acquire(&ptable.lock);
+          /*  c3++;
+            p->priority++;
+            q2[c3-1]=p;
+            q2[i]=0;
+            for(int j = i; j < c2; j++){
+              q2[j] = q2[j+1];
+            } 
+            c2--;*/
+      //    }
+          c->proc = 0;
+          goto padhi;
+        //}
+      }
+    }
+
+    if(c3){
+      for(int i = 0; i < c3; i++){
+        if(q3[i]->state != RUNNABLE)
+          continue;
+        //if(q3[i]){
+          p = q3[i];
+          //cprintf("from c0. id =%d name =%s\n",p->pid,p->name);
+				  cprintf("executing this  . id=%d , name =%s , state =%d, priority=%d\n",p->pid, p->name,p->state,p->priority);
+				  c->proc = p;
+          switchuvm(p);
+//          cprintf("ttttttttttttttttttttt\n");
+				  p->state = RUNNING;
+          p->last_time=ticks;
+				  swtch(&c->scheduler, p->context);
+//          cprintf("I will switch you\n");
+				  switchkvm();
+//          cprintf("proc exec\n");
+        //  if(p->clicks==clicks_per_queue[2]){
+//            release(&ptable.lock);
+//            yield();
+//            acquire(&ptable.lock);
+           /*  c4++;
+            p->priority++;
+            q4[c4-1]=p;
+            q3[i]=0;
+            for(int j = i; j < c3; j++){
+              q3[j] = q3[j+1];
+            }
+            c3--;*/
+  //        }
+          c->proc = 0;
+          goto padhi;
+        //}
+      }
+    }
+
+    if(c4){
+      for(int i = 0; i < c4; i++){
+        if(q4[i]->state != RUNNABLE)
+          continue;
+        //if(q4[i]){
+          p = q4[i];
+          //cprintf("from c0. id =%d name =%s\n",p->pid,p->name);
+				  cprintf("executing this  . id=%d , name =%s , state =%d, priority=%d\n",p->pid, p->name,p->state, p->priority);
+				  c->proc = p;
+          switchuvm(p);
+				  p->state = RUNNING;
+          p->last_time=ticks;
+				  swtch(&c->scheduler, p->context);
+				  switchkvm();
+    //      if(p->clicks==clicks_per_queue[3]){
+//            release(&ptable.lock);
+//            yield();
+//            acquire(&ptable.lock);
+          /*    c5++;
+            p->priority++;
+            q5[c5-1]=p;
+            q4[i]=0;
+            for(int j = i; j < c4; j++){
+              q4[j] = q4[j+1];
+            }
+            c4--;*/
+      //    }
+          c->proc = 0;
+          goto padhi;
+        //}
+      }
+    }
+
+    if(c5){
+      for(int i = 0; i < c5; i++){
+        if(q5[i]->state != RUNNABLE)
+          continue;
+        //if(q5[i]){
+          p = q5[i];
+          //cprintf("from c0. id =%d name =%s\n",p->pid,p->name);
+				  cprintf("executing this  . id=%d , name =%s , state =%d, priority=%d\n",p->pid, p->name,p->state,p->priority);
+				  c->proc = p;
+          switchuvm(p);
+				  p->state = RUNNING;
+          p->last_time=ticks;
+				  swtch(&c->scheduler, p->context);
+				  switchkvm();
+        //  if(p->clicks==clicks_per_queue[4]){
+//            release(&ptable.lock);
+//            yield();
+//            acquire(&ptable.lock);
+           /*   q5[i]=0;
+            for(int j = i; j < c5; j++){
+              q5[j] = q5[j+1];
+            }
+            c5--;
+            q5[c5-1]=p;*/
+          
+         // c->proc = 0;
+          goto padhi;
+        //}
+      }
+    }
 
     #endif
     #endif
@@ -497,9 +768,154 @@ yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
   myproc()->state = RUNNABLE;
+  myproc()->num_run++;
+#ifdef MLFQ
+//  cprintf("about to yeet %s\n",myproc()->name);
+  if(myproc()->priority==1){
+  if(myproc()->cq[0]>=clicks_per_queue[myproc()->priority-1]){
+    c2++;
+    myproc()->priority++;
+    q2[c2-1]=myproc();
+    int i=0;
+    for(int a = 0; a < c1; a++){
+      if(q1[a]->pid==myproc()->pid)
+          i = a;
+    }
+    q1[i]=0;
+    for(int j = i; j < c1-1; j++){
+     q1[j] = q1[j+1];
+    }
+    c1--;
+  }
+  else{
+    myproc()->cq[myproc()->priority-1]++;
+/*    int i = 0;
+    for(int a = 0; a < c1-1; a++){
+      if(q1[a]->pid==myproc()->pid)
+          i=a;
+    }
+    q1[i]=0;
+    for(int j = i; j<c1-1; j++){
+      q1[j]=q1[j-1];
+    }
+    q1[c1-1]=myproc();*/
+  }
+  }
+
+  if(myproc()->priority==2){
+  if(myproc()->cq[1]>=clicks_per_queue[myproc()->priority-1]){
+    c3++;
+    myproc()->priority++;
+    q3[c3-1]=myproc();
+    int i=0;
+    for(int a = 0; a < c2; a++){
+      if(q2[a]->pid==myproc()->pid)
+          i = a;
+    }
+    q2[i]=0;
+    for(int j = i; j < c2-1; j++){
+     q2[j] = q2[j+1];
+    }
+    c2--;
+  }
+  else{
+    myproc()->cq[myproc()->priority-1]++;
+/*    int i = 0;
+    for(int a = 0; a < c2-1; a++){
+      if(q2[a]->pid==myproc()->pid)
+          i=a;
+    }
+    q2[i]=0;
+    for(int j = i; j<c2-1; j++){
+      q2[j]=q2[j-1];
+    }
+    q2[c2-1]=myproc();*/
+  }
+  }
+
+  if(myproc()->priority==3){
+  if(myproc()->cq[2]>=clicks_per_queue[myproc()->priority-1]){
+    c4++;
+    myproc()->priority++;
+    q4[c4-1]=myproc();
+    int i=0;
+    for(int a = 0; a < c3; a++){
+      if(q3[a]->pid==myproc()->pid)
+          i = a;
+    }
+    q3[i]=0;
+    for(int j = i; j < c3-1; j++){
+     q3[j] = q3[j+1];
+    }
+    c3--;
+  }
+  else{
+    myproc()->cq[myproc()->priority-1]++;
+/*    int i = 0;
+    for(int a = 0; a < c3-1; a++){
+      if(q3[a]->pid==myproc()->pid)
+          i=a;
+    }
+    q3[i]=0;
+    for(int j = i; j<c3-1; j++){
+      q3[j]=q3[j-1];
+    }
+    q3[c3-1]=myproc();*/
+  }
+  }
+
+  if(myproc()->priority==4){
+  if(myproc()->cq[3]>=clicks_per_queue[myproc()->priority-1]){
+    c5++;
+    myproc()->priority++;
+    q5[c5-1]=myproc();
+    int i=0;
+    for(int a = 0; a < c4; a++){
+      if(q4[a]->pid==myproc()->pid)
+          i = a;
+    }
+    q4[i]=0;
+    for(int j = i; j < c4-1; j++){
+     q4[j] = q4[j+1];
+    }
+    c4--;
+  }
+  else{
+    myproc()->cq[myproc()->priority-1]++;
+/*    int i = 0;
+    for(int a = 0; a < c4-1; a++){
+      if(q4[a]->pid==myproc()->pid)
+          i=a;
+    }
+    q4[i]=0;
+    for(int j = i; j<c4-1; j++){
+      q4[j]=q4[j-1];
+    }
+    q4[c4-1]=myproc();*/
+  }
+  }
+
+  else if(myproc()->priority == 5){
+    if(myproc()->cq[4]<=clicks_per_queue[myproc()->priority-1])
+        myproc()->cq[myproc()->priority-1]++;
+    else{
+    int i=0;
+    for(int a = 0; a < c5; a++){
+      if(q5[a]->pid == myproc()->pid)
+        i = a;
+    }
+    q5[i]=0;
+    for(int j = i; j < c5-1; j++){
+      q5[j] = q5[j+1];
+    }
+    q5[c5-1] = myproc();
+    }
+  }
+#endif
   sched();
   release(&ptable.lock);
 }
+
 
 // A fork child's very first scheduling by scheduler()
 // will swtch here.  "Return" to user space.
@@ -569,9 +985,33 @@ wakeup1(void *chan)
 {
   struct proc *p;
 
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state == SLEEPING && p->chan == chan){
       p->state = RUNNABLE;
+      #ifdef MLFQ
+      if(p->priority==1){
+        c1++;
+        q1[c1-1]=p;
+      }
+      if(p->priority==2){
+        c2++;
+        q2[c2-1]=p;
+      }
+      if(p->priority==3){
+        c3++;
+        q3[c3-1]=p;
+      }
+      if(p->priority==4){
+        c4++;
+        q4[c4-1]=p;
+      }
+      if(p->priority==5){
+        c5++;
+        q5[c5-1]=p;
+      }
+      #endif
+    }
+  }
 }
 
 // Wake up all processes sleeping on chan.
@@ -596,8 +1036,9 @@ kill(int pid)
     if(p->pid == pid){
       p->killed = 1;
       // Wake process from sleep if necessary.
-      if(p->state == SLEEPING)
+      if(p->state == SLEEPING){
         p->state = RUNNABLE;
+      }
       release(&ptable.lock);
       return 0;
     }

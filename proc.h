@@ -32,6 +32,14 @@ struct context {
   uint eip;
 };
 
+struct procstat{
+    int pid;
+    int runtime;
+    int num_run;
+    int current_queue;
+    int ticks[5];
+};
+
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 // Per-process state
@@ -54,6 +62,9 @@ struct proc {
   int rtime;
   int iotime;
   int priority;
+  int cq[5];
+  int last_time;
+  int num_run; 
 };
 
 // Process memory is laid out contiguously, low addresses first:

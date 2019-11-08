@@ -112,6 +112,15 @@ sys_cps(void)
 }
 
 int
+sys_getpinfo(void)
+{
+  struct procstat *procstat;
+  if(argptr(0, (char**)&procstat, sizeof(int))<0)
+    return -1;
+  return getpinfo(procstat);
+}
+
+int
 sys_cpr(void)
 {
     int pid, pr;

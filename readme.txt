@@ -1,0 +1,3 @@
+In xv6 for the scheduling algos we go through the scheduler function. In that we loop through all the processes which are runnable and select the first such process(For mlfq we go through all queues and after finding a process we go through it all again. After the process is selected we switch context and add the cpu info. After the process runs, it goes to trap.c. In trap.c it calls yield. In yield(for multilevel the process enters the next lower priority queue). After the process completes ends it goes throught the exit routine. 
+A process is initialised with priority. Priority can be changed using changepr. 
+Pinfo gives info about process.
